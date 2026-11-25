@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <section class="card" id="upload">
+    <h1>CSV 上传 / 整日替换</h1>
+    <p class="hint">选择日期并上传 CSV。同一日期上传会以新文件<b>整日替换</b>；暂扣记录按“日期 + 单号”保留，不会因重报或单号暂时缺失而丢失。</p>
+    <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" class="form">
+      <div class="field">
+        <label for="upload-date">单据日期</label>
+        <input id="upload-date" name="date" type="date" required value="{{ request.args.get('date') or today }}">
+      </div>
+      <div class="field">
+        <label for="csv-file">CSV 文件</label>
+        <input id="csv-file" name="file" type="file" accept=".csv,text/csv">
+        <small>选择文件即可；也可展开下方文本框粘贴。支持表头 <code>单号,净重</code> / <code>ticket_no,net_weight</code>，或无表头两列；净重为 0～65535 的整数。</small>
+      </div>
+      <details>
+        <summary>或直接粘贴 CSV</summary>
+        <div class="field">
+          <label for="csv-text">CSV 文本</label>
+          <textarea id="csv-text" name="csv_text" rows="5" placeholder="单号,净重&#10;A-1001,32000&#10;A-1002,31500"></textarea>
+        </div>
+      </details>
+      <button class="btn primary" type="submit">上传并整日替换</button>
+    </form>
+  </section>
+
+  <section class="card" id="hold">
+    <h2>暂扣 / 解除</h2>
+    <form action="{{ url_for('hold') }}" method="post" class="form inline-actions">
+      <div class="field">
+        <label for="hold-date">日期</label>
+        <input id="hold-date" name="date" type="date" required value="{{ request.args.get('date') or today }}">
+      </div>
+      <div class="field">
+        <label for="hold-ticket-no">日内单号</label>
+        <input id="hold-ticket-no" name="ticket_no" required placeholder="例如 A-1001">
+      </div>
+      <div class="field">
+        <label for="hold-reason">原因（可选）</label>
+        <input id="hold-reason" name="reason" placeholder="异常复核">
+      </div>
+      <div class="button-row">
+        <button class="btn warn" type="submit" formaction="{{ url_for('hold') }}">暂扣</button>
+        <button class="btn" type="submit" formaction="{{ url_for('release') }}">解除暂扣</button>
+      </div>
+    </form>
+    <p class="hint">暂扣单仍计入“全部秤单”，但不计入“未暂扣秤单”。</p>
+  </section>
+</div>
+
+<section class="card" id="query">
+  <h2>同期名次复核</h2>
+  <form action="{{ url_for('query_view') }}" method="get" class="form query-form">
+    <div class="field">
+      <label for="q-date">单据日期</label>
+      <input id="q-date" name="date" type="date" required value="{{ request.args.get('date') or today }}">
+    </div>
+    <div class="field">
+      <label for="q-ticket-no">单号</label>
+      <input id="q-ticket-no" name="ticket_no" required value="{{ request.args.get('ticket_no', '') }}" placeholder="日内唯一单号">
+    </div>
+    <div class="field">
+      <label for="q-start">同年起始日（含）</label>
+      <input id="q-start" name="start" type="date" value="{{ request.args.get('start', today[:4] ~ '-01-01') }}">
+    </div>
+    <div class="field">
+      <label for="q-end">同年结束日（含）</label>
+      <input id="q-end" name="end" type="date" value="{{ request.args.get('end', today[:4] ~ '-12-31') }}">
+    </div>
+    <button class="btn primary" type="submit">查询总数与名次</button>
+  </form>
+  <p class="hint">区间必须包含单据日期；按净重降序。同重单据共用从“更高票数 + 1”到“更高票数 + 同重票数”的名次区间。</p>
+</section>
+
+{% if day_data %}
+<section class="card" id="day-readback">
+  <h2>{{ day_data.date }} 当天原单回读</h2>
+  {% include "_day_table.html" %}
+</section>
+{% endif %}
+
+<section class="card subtle">
+  <h2>接口与示例</h2>
+  <ul>
+    <li>名次 JSON：<code>GET /api/rank?date=2026-05-01&amp;ticket_no=B&amp;start=2026-01-01&amp;end=2026-12-31</code></li>
+    <li>上传：<code>POST /upload</code>，表单字段 <code>date</code> 与文件 <code>file</code>。</li>
+    <li>暂扣 / 解除：<code>POST /hold</code>、<code>POST /release</code>。</li>
+  </ul>
+</section>
+{% endblock %}

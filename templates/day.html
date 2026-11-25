@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ day_data.date }} 原单回读{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h1>{{ day_data.date }} 当天原单</h1>
+    <a class="btn" href="{{ url_for('index', date=day_data.date) }}#upload">返回上传</a>
+  </div>
+  <p class="hint">重报后这里只回读该日期的原始秤单；暂扣标记来自独立暂扣记录。</p>
+  {% include "_day_table.html" %}
+  <p><a class="btn primary" href="{{ url_for('query_view', date=day_data.date, start=day_data.date[:4] ~ '-01-01', end=day_data.date[:4] ~ '-12-31') }}">去查该日单号名次</a></p>
+</section>
+{% endblock %}

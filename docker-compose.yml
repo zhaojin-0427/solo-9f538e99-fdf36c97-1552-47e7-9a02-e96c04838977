@@ -1,0 +1,27 @@
+services:
+  web:
+    build: .
+    image: scale-review:latest
+    ports:
+      - "8000:8000"
+      - "5000:8000"
+    environment:
+      DB_PATH: /data/scale.db
+      PORT: "8000"
+      SECRET_KEY: ${SECRET_KEY:-compose-local-change-me}
+    volumes:
+      - scale-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  scale-data:

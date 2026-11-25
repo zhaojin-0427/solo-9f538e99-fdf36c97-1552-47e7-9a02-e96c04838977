@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}名次复核结果{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>同期名次查询</h1>
+  <form action="{{ url_for('query_view') }}" method="get" class="form query-form">
+    <div class="field">
+      <label for="q-date">单据日期</label>
+      <input id="q-date" name="date" type="date" required value="{{ (result.query.date if result and result.query else form.date) or today }}">
+    </div>
+    <div class="field">
+      <label for="q-ticket-no">单号</label>
+      <input id="q-ticket-no" name="ticket_no" required value="{{ (result.query.ticket_no if result and result.query else form.ticket_no) or '' }}">
+    </div>
+    <div class="field">
+      <label for="q-start">起始日（含）</label>
+      <input id="q-start" name="start" type="date" value="{{ (result.query.start if result and result.query else form.start) or today[:4] ~ '-01-01' }}">
+    </div>
+    <div class="field">
+      <label for="q-end">结束日（含）</label>
+      <input id="q-end" name="end" type="date" value="{{ (result.query.end if result and result.query else form.end) or today[:4] ~ '-12-31' }}">
+    </div>
+    <button class="btn primary" type="submit">重新查询</button>
+  </form>
+</section>
+
+{% if result %}
+<section class="card result">
+  {% if not result.found %}
+    <h2>未找到目标原单</h2>
+    <p>日期 <b>{{ result.query.date }}</b> 下没有单号 <b>{{ result.query.ticket_no }}</b> 的秤单，因此无法由原单索引取得净重并排定名次。</p>
+    {% if result.held %}<p><span class="badge held">暂扣记录存在</span> 该暂扣仍有效。</p>{% endif %}
+  {% else %}
+    <div class="result-head">
+      <div>
+        <h2>{{ result.query.date }} / {{ result.query.ticket_no }}</h2>
+        <p class="weight">净重 <b>{{ result.target.net_weight }}</b> kg；区间 {{ result.query.start }} 至 {{ result.query.end }}（含首尾）。</p>
+      </div>
+      {% if result.held %}<span class="badge held big">目标单暂扣中</span>{% else %}<span class="badge ok big">目标单未暂扣</span>{% endif %}
+    </div>
+
+    <table class="data rank-table">
+      <thead>
+        <tr><th>口径</th><th>区间总数</th><th>更高净重票数</th><th>同重票数</th><th>降序名次 / 共用区间</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>全部秤单</b></td>
+          <td class="num">{{ result.all.total }}</td>
+          <td class="num">{{ result.all.higher }}</td>
+          <td class="num">{{ result.all.equal }}</td>
+          <td class="rank" data-rank-start="{{ result.all.rank_start }}" data-rank-end="{{ result.all.rank_end }}">{{ result.all.rank_text }}</td>
+          <td>含暂扣单</td>
+        </tr>
+        <tr class="{{ 'held-target' if result.held else '' }}">
+          <td><b>未暂扣秤单</b></td>
+          <td class="num">{{ result.active.total }}</td>
+          {% if result.held %}
+            <td class="num muted">—</td><td class="num muted">—</td>
+            <td class="rank rank-empty" data-rank-blank="true" aria-label="名次留空"></td>
+            <td><span class="badge held">暂扣</span> {{ result.active.note }}</td>
+          {% else %}
+            <td class="num">{{ result.active.higher }}</td>
+            <td class="num">{{ result.active.equal }}</td>
+            <td class="rank" data-rank-start="{{ result.active.rank_start or '' }}" data-rank-end="{{ result.active.rank_end or '' }}">{{ result.active.rank_text }}</td>
+            <td>已剔除所有暂扣单</td>
+          {% endif %}
+        </tr>
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% set meter = result.meter %}
+  <p class="meter" id="subtotal-access" data-count="{{ meter.accessed }}" data-limit="576">
+    本次查询取自同一已提交读事务；除按主键索引读取目标原单和暂扣状态外，
+    小计键访问数：<strong id="subtotal-access-count" data-count="{{ meter.accessed }}">{{ meter.accessed }}</strong> 个
+    （其中空键 <strong>{{ meter.empty }}</strong> 个），上限 <b>576</b>；
+    日期规范段 {{ result.date_segment_count if result.date_segment_count is defined else result.date_segments|length }} 个。
+    {% if meter.accessed <= 576 %}<span class="badge ok">符合限制</span>{% else %}<span class="badge held">超出限制</span>{% endif %}
+  </p>
+
+  {% if meter.details %}
+  <details class="key-details">
+    <summary>查看 {{ meter.details|length }} 个小计键访问明细</summary>
+    <div class="table-scroll">
+      <table class="data compact">
+        <thead><tr><th>#</th><th>口径</th><th>日期段</th><th>重量档</th><th>读到票数</th><th>空键</th></tr></thead>
+        <tbody>
+        {% for item in meter.details %}
+          <tr class="{{ 'empty-key' if item.empty else '' }}">
+            <td class="num">{{ item.n }}</td>
+            <td>{{ '全部' if item.scope == 'all' else '未暂扣' }}</td>
+            <td>{{ item.date_segment }}</td>
+            <td>{{ item.weight_band }}</td>
+            <td class="num">{{ item.count }}</td>
+            <td>{{ '是' if item.empty else '否' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

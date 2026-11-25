@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}原单回读 {{ ticket_no }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>对应原单回读</h1>
+  <dl class="detail-grid">
+    <dt>日期</dt><dd>{{ date }}</dd>
+    <dt>单号</dt><dd>{{ ticket_no }}</dd>
+    <dt>原单净重</dt>
+    <dd>{% if data.ticket %}<b>{{ data.ticket.net_weight }}</b> kg{% else %}<span class="badge warn-text">当前不存在（可能尚未重报或已被整日替换移除）</span>{% endif %}</dd>
+    <dt>暂扣状态</dt>
+    <dd>{% if data.held %}<span class="badge held">暂扣中</span>{% if data.hold.reason %}：{{ data.hold.reason }}{% endif %}{% else %}<span class="badge ok">未暂扣</span>{% endif %}</dd>
+  </dl>
+
+  <div class="button-row">
+    <form method="post" action="{{ url_for('hold') }}">
+      <input type="hidden" name="date" value="{{ date }}">
+      <input type="hidden" name="ticket_no" value="{{ ticket_no }}">
+      <input type="text" name="reason" placeholder="暂扣原因（可选）">
+      <button class="btn warn" type="submit">暂扣</button>
+    </form>
+    <form method="post" action="{{ url_for('release') }}">
+      <input type="hidden" name="date" value="{{ date }}">
+      <input type="hidden" name="ticket_no" value="{{ ticket_no }}">
+      <button class="btn" type="submit">解除暂扣</button>
+    </form>
+    {% if data.ticket %}
+    <a class="btn primary" href="{{ url_for('query_view', date=date, ticket_no=ticket_no, start=date[:4] ~ '-01-01', end=date[:4] ~ '-12-31') }}">查询全年名次</a>
+    {% endif %}
+  </div>
+  <p class="hint">暂扣记录独立保存；即使该单在后续 CSV 中一度缺失，记录仍在，再次出现时自动按暂扣口径统计。</p>
+</section>
+{% endblock %}

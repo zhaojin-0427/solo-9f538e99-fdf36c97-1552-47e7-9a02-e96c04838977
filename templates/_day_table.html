@@ -1,0 +1,54 @@
+{% if day_data.tickets %}
+<table class="data">
+  <thead><tr><th>单号</th><th>净重(kg)</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for t in day_data.tickets %}
+    <tr class="{{ 'held-row' if t.held else '' }}">
+      <td><a href="{{ url_for('ticket_view', date=t.slip_date, ticket_no=t.ticket_no) }}">{{ t.ticket_no }}</a></td>
+      <td class="num">{{ t.net_weight }}</td>
+      <td>{% if t.held %}<span class="badge held">暂扣</span>{% if t.reason %} {{ t.reason }}{% endif %}{% else %}<span class="badge ok">正常</span>{% endif %}</td>
+      <td>
+        {% if t.held %}
+        <form method="post" action="{{ url_for('release') }}" class="inline">
+          <input type="hidden" name="date" value="{{ t.slip_date }}">
+          <input type="hidden" name="ticket_no" value="{{ t.ticket_no }}">
+          <button class="btn small" type="submit">解除</button>
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('hold') }}" class="inline">
+          <input type="hidden" name="date" value="{{ t.slip_date }}">
+          <input type="hidden" name="ticket_no" value="{{ t.ticket_no }}">
+          <button class="btn small warn" type="submit">暂扣</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">当天没有秤单。</p>
+{% endif %}
+
+{% if day_data.missing_holds %}
+<h3>原单暂缺但仍有效的暂扣记录</h3>
+<table class="data">
+  <thead><tr><th>日期</th><th>单号</th><th>原因</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for h in day_data.missing_holds %}
+    <tr class="held-row missing">
+      <td>{{ h.slip_date }}</td>
+      <td><a href="{{ url_for('ticket_view', date=h.slip_date, ticket_no=h.ticket_no) }}">{{ h.ticket_no }}</a></td>
+      <td>{{ h.reason or '—' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('release') }}" class="inline">
+          <input type="hidden" name="date" value="{{ h.slip_date }}">
+          <input type="hidden" name="ticket_no" value="{{ h.ticket_no }}">
+          <button class="btn small" type="submit">解除</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
