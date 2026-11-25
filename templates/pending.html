@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}选择编码后换报{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h1>文件两种编码都能入库，请选择</h1>
+    <span class="badge warn-text">待确认</span>
+  </div>
+  <p class="hint">
+    {{ pending.date }} 的日报暂未改动，下面显示的仍是旧日报。请对照两种编码的首处分歧明细，
+    选择正确编码后换报；<b>无需重新上传</b>。
+  </p>
+  <div class="detail-grid">
+    <dt>文件</dt><dd>{{ pending.filename or '（未命名）' }}</dd>
+    <dt>文件字节</dt><dd>{{ pending.file_size }}</dd>
+    <dt>候选编码</dt>
+    <dd>{% for c in pending.candidates %}<code>{{ encoding_label(c.encoding) }}</code>{% if c.ok %} 可入库，{{ c.ticket_count }} 单{% else %} 不可入库：{{ c.error }}{% endif %}{% if not loop.last %}；{% endif %}{% endfor %}</dd>
+    <dt>过期时间</dt>
+    <dd>{{ expires_text }}（约 {{ expires_in }} 秒后；超时需重新上传）</dd>
+    <dt>判别原文读取</dt>
+    <dd>{{ pending.raw_bytes_read }} 字节（文件 {{ pending.file_size }} 字节；上限 {{ pending.file_size * 2 }}）</dd>
+  </div>
+
+  {% if stale %}
+  <p class="flash flash-error">同日日报在本次判别后已被换过，这份待确认不再适用，请重新上传。</p>
+  {% endif %}
+
+  {% set div = pending.divergence %}
+  {% if div %}
+  <h2>首处分歧明细</h2>
+  <p class="hint">同一份原文按两种编码读取，首个出现差异的数据行（按数据行从 1 计）为第 {{ div.row_number }} 行：</p>
+  <table class="data">
+    <thead>
+      <tr><th>编码</th><th>该行单号</th><th>该行净重(kg)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>UTF-8</code></td>
+        <td>{% if div.utf8 and not div.utf8.missing %}{{ div.utf8.ticket_no }}{% else %}<span class="muted">该编码无此行</span>{% endif %}</td>
+        <td class="num">{% if div.utf8 and not div.utf8.missing %}{{ div.utf8.net_weight }}{% else %}—{% endif %}</td>
+      </tr>
+      <tr>
+        <td><code>GB18030</code></td>
+        <td>{% if div.gb18030 and not div.gb18030.missing %}{{ div.gb18030.ticket_no }}{% else %}<span class="muted">该编码无此行</span>{% endif %}</td>
+        <td class="num">{% if div.gb18030 and not div.gb18030.missing %}{{ div.gb18030.net_weight }}{% else %}—{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% endif %}
+
+  <div class="button-row" style="margin-top:18px">
+    {% for c in pending.candidates if c.ok %}
+    <form method="post" action="{{ url_for('confirm') }}" class="inline">
+      <input type="hidden" name="token" value="{{ pending.token }}">
+      <input type="hidden" name="encoding" value="{{ c.encoding }}">
+      <button class="btn primary" type="submit" {% if stale %}disabled{% endif %}>
+        按 {{ encoding_label(c.encoding) }} 换报（{{ c.ticket_count }} 单）
+      </button>
+    </form>
+    {% endfor %}
+    <form method="post" action="{{ url_for('cancel_pending', token=pending.token) }}" class="inline">
+      <button class="btn" type="submit">放弃，保留旧日报</button>
+    </form>
+  </div>
+
+  {% for c in pending.candidates if not c.ok %}
+  <p class="hint">按 {{ encoding_label(c.encoding) }} 无法入库：{{ c.error }}</p>
+  {% if c.errors %}<ul class="hint">{% for e in c.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  {% endfor %}
+</section>
+
+<section class="card" id="old-day">
+  <h2>{{ day_data.date }} 当前旧日报（确认前照常供数）</h2>
+  {% include "_day_table.html" %}
+</section>
+{% endblock %}

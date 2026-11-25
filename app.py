@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -34,6 +35,10 @@ def create_app(db_path: str | None = None) -> Flask:
         os.close(fd)
     app.config["DB_PATH"] = db_path
     core.init_db_path(db_path)
+
+    @app.template_global()
+    def encoding_label(encoding: str) -> str:
+        return "UTF-8" if encoding == core.ENCODING_UTF8 else "GB18030"
 
     def get_db():
         if "db" not in g:
@@ -127,33 +132,141 @@ def create_app(db_path: str | None = None) -> Flask:
         day = first_value("date", "slip_date", "slipDate", "upload_date", "day")
         upload_file = first_uploaded_file()
         csv_text = first_value("csv_text", "text")
+        pool_token: str | None = None
 
         try:
             if upload_file is not None and upload_file.filename:
-                text = core.decode_csv_bytes(upload_file.read())
+                # Validate the date before touching the file so a bad date
+                # cannot leave a parsed row pool behind.
+                core.parse_iso_date(day, "上传日期")
                 filename = upload_file.filename
+                pool_token = secrets.token_urlsafe(24)
+                spool = core.CountingSpool(upload_file.stream)
+                try:
+                    detection = core.detect_upload(get_db(), spool, pool_token)
+                finally:
+                    spool.close()
+                if detection["requires_choice"]:
+                    pending = core.create_pending_upload(
+                        get_db(), day, detection, filename
+                    )
+                    pool_token = None  # now owned by the pending record
+                    if wants_json():
+                        return jsonify(
+                            ok=True,
+                            pending=True,
+                            **to_jsonable(pending),
+                        ), 409
+                    return redirect(
+                        url_for("pending_view", token=pending["token"]), code=303
+                    )
+                if not detection["chosen"]:
+                    raise core.ValidationError("未能判别文件编码，请重新上传")
+                summary = core.replace_day_from_pool(
+                    get_db(), day, pool_token, detection["chosen"]
+                )
+                pool_token = None
+                summary["filename"] = filename
+                summary["bom"] = detection["bom"]
             elif csv_text:
-                text = csv_text
                 filename = "pasted.csv"
+                tickets = core.parse_csv_text(csv_text)
+                summary = core.replace_day_tickets(get_db(), day, tickets)
+                summary["encoding"] = core.ENCODING_UTF8
+                summary["filename"] = filename
+                summary["bom"] = False
             else:
                 raise core.ValidationError("请选择 CSV 文件，或粘贴 CSV 文本")
-            tickets = core.parse_csv_text(text)
-            summary = core.replace_day_tickets(get_db(), day, tickets)
         except core.ValidationError as exc:
+            if pool_token is not None:
+                core.discard_pending_upload(get_db(), pool_token)
             return error_response(exc.message, errors=exc.errors)
         except sqlite3.Error as exc:  # pragma: no cover - defensive
             app.logger.exception("database failure during upload")
+            if pool_token is not None:
+                core.discard_pending_upload(get_db(), pool_token)
             return error_response(f"数据库写入失败，已回滚，旧数据仍可查询：{exc}", status=500)
 
         if wants_json():
-            return jsonify(ok=True, **summary, filename=filename)
-
+            return jsonify(ok=True, pending=False, **summary)
         flash(
             f"已整日替换 {summary['date']}：旧 {summary['old_count']} 单，"
-            f"新 {summary['new_count']} 单；暂扣记录保持有效。",
+            f"新 {summary['new_count']} 单；按 {summary['encoding'].upper()} 读取；"
+            f"暂扣记录保持有效。",
             "success",
         )
         return redirect(url_for("day_view", date=summary["date"], uploaded=1), code=303)
+
+    @app.get("/pending/<token>")
+    def pending_view(token: str):
+        pending = core.get_pending_upload(get_db(), token)
+        if pending is None:
+            if wants_json():
+                return jsonify(ok=False, error="待确认已过期或不存在，请重新上传"), 404
+            flash("待确认已过期或不存在，请重新上传。", "error")
+            return redirect(url_for("index"), code=303)
+        if pending["expired"]:
+            if wants_json():
+                return jsonify(ok=False, error="待确认已过期，请重新上传"), 410
+            flash("待确认已过期，请重新上传。", "error")
+            return redirect(url_for("index"), code=303)
+        current_revision = core.get_day_revision(get_db(), pending["date"])
+        return render_template(
+            "pending.html",
+            pending=pending,
+            day_data=core.get_day_readback(get_db(), pending["date"]),
+            current_revision=current_revision,
+            stale=current_revision != pending["base_revision"],
+            expires_text=core.format_local_time(pending["expires_at"]),
+            expires_in=max(0, int(pending["expires_at"] - core.time.time())),
+            today=core.date.today().isoformat(),
+        )
+
+    @app.post("/confirm")
+    def confirm():
+        token = first_value("token")
+        encoding = first_value("encoding", "charset")
+        try:
+            summary = core.confirm_pending_upload(get_db(), token, encoding)
+        except core.DayAlreadyReplaced as exc:
+            if wants_json():
+                return jsonify(ok=False, error=exc.message, reupload=True), 409
+            flash(exc.message, "error")
+            return redirect(url_for("index"), code=303)
+        except core.ConfirmationExpired as exc:
+            if wants_json():
+                return jsonify(ok=False, error=exc.message, expired=True), 410
+            flash(exc.message, "error")
+            return redirect(url_for("index"), code=303)
+        except core.ValidationError as exc:
+            return error_response(exc.message, errors=exc.errors)
+        except sqlite3.Error as exc:  # pragma: no cover
+            app.logger.exception("database failure during confirm")
+            return error_response(f"换报写入失败，已回滚：{exc}", status=500)
+
+        if wants_json():
+            return jsonify(ok=True, **summary)
+        flash(
+            f"已按 {summary['encoding'].upper()} 换报 {summary['date']}："
+            f"旧 {summary['old_count']} 单，新 {summary['new_count']} 单；"
+            f"生效前已提交的暂扣已更新原单和两种名次小计。",
+            "success",
+        )
+        return redirect(url_for("day_view", date=summary["date"], confirmed=1), code=303)
+
+    @app.post("/pending/<token>/cancel")
+    def cancel_pending(token: str):
+        pending = core.get_pending_upload(get_db(), token)
+        if pending is not None:
+            core.discard_pending_upload(get_db(), token)
+        if wants_json():
+            return jsonify(ok=True)
+        flash("已放弃本次换报，旧日报继续供数。", "info")
+        return redirect(url_for("index"), code=303)
+
+    @app.post("/api/confirm")
+    def api_confirm_alias():
+        return confirm()
 
     @app.post("/hold")
     def hold():

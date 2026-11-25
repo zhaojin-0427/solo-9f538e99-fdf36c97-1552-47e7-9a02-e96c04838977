@@ -3,7 +3,7 @@
 <div class="grid">
   <section class="card" id="upload">
     <h1>CSV 上传 / 整日替换</h1>
-    <p class="hint">选择日期并上传 CSV。同一日期上传会以新文件<b>整日替换</b>；暂扣记录按“日期 + 单号”保留，不会因重报或单号暂时缺失而丢失。</p>
+    <p class="hint">选择日期并上传 CSV。同一日期上传会以新文件<b>整日替换</b>；暂扣记录按“日期 + 单号”保留，不会因重报或单号暂时缺失而丢失。带 UTF-8 BOM 的文件按 UTF-8 读取；其余文件自动判别 UTF-8 / GB18030，若两种编码都能入库且单号或净重有分歧，会先让你选择编码，旧日报在确认前照常供数。</p>
     <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" class="form">
       <div class="field">
         <label for="upload-date">单据日期</label>
